@@ -5,7 +5,7 @@ import org.springframework.stereotype.Component;
 
 
 // 动态线程池的配置文件
-@Component
+//@Component
 @ConfigurationProperties(prefix = "dynamic.thread.pool.config", ignoreInvalidFields = true)
 public class DynamicThreadPoolAutoProperties {
 

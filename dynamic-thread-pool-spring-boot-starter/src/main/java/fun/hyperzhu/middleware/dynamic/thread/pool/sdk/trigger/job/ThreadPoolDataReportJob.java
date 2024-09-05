@@ -23,9 +23,12 @@ public class ThreadPoolDataReportJob {
         this.registry = registry;
     }
 
+    // 每20秒钟执行一次 execReportThreadPoolList() 方法。这个方法就是定期上报线程池数据的任务。
     @Scheduled(cron = "0/20 * * * * ?")
     public void execReportThreadPoolList() {
+        // 获取线程池列表
         List<ThreadPoolConfigEntity> threadPoolConfigEntities = dynamicThreadPoolService.queryThreadPoolList();
+        // 上报线程池信息
         registry.reportThreadPool(threadPoolConfigEntities);
         logger.info("动态线程池，上报线程池信息：{}", JSON.toJSONString(threadPoolConfigEntities));
 
@@ -33,7 +36,6 @@ public class ThreadPoolDataReportJob {
             registry.reportThreadPoolConfigParameter(threadPoolConfigEntity);
             logger.info("动态线程池，上报线程池配置：{}", JSON.toJSONString(threadPoolConfigEntity));
         }
-
     }
 
 }
