@@ -3,11 +3,15 @@ package fun.hyperzhu.middleware.dynamic.thread.pool.sdk.config;
 import com.alibaba.fastjson.JSON;
 import fun.hyperzhu.middleware.dynamic.thread.pool.sdk.domain.DynamicThreadPoolService;
 import fun.hyperzhu.middleware.dynamic.thread.pool.sdk.domain.IDynamicThreadPoolService;
+import fun.hyperzhu.middleware.dynamic.thread.pool.sdk.domain.model.entity.ThreadPoolConfigEntity;
+import fun.hyperzhu.middleware.dynamic.thread.pool.sdk.domain.model.valobj.RegistryEnumVO;
 import fun.hyperzhu.middleware.dynamic.thread.pool.sdk.registry.IRegistry;
 import fun.hyperzhu.middleware.dynamic.thread.pool.sdk.registry.redis.RedisRegistry;
 import fun.hyperzhu.middleware.dynamic.thread.pool.sdk.trigger.job.ThreadPoolDataReportJob;
+import fun.hyperzhu.middleware.dynamic.thread.pool.sdk.trigger.listener.ThreadPoolConfigAdjustListener;
 import io.micrometer.core.instrument.util.StringUtils;
 import org.redisson.Redisson;
+import org.redisson.api.RTopic;
 import org.redisson.api.RedissonClient;
 import org.redisson.codec.JsonJacksonCodec;
 import org.redisson.config.Config;
@@ -26,12 +30,14 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 
 
+
 @Configuration
 @EnableConfigurationProperties(DynamicThreadPoolAutoProperties.class)
 @EnableScheduling
 public class DynamicThreadPoolAutoConfig {
 
     private final Logger logger = LoggerFactory.getLogger(DynamicThreadPoolAutoConfig.class);
+    private String applicationName;
 
     // 实现了动态线程池系统的Redis注册中心（Registry）配置
     @Bean("dynamicThreadRedissonClient")
@@ -67,8 +73,10 @@ public class DynamicThreadPoolAutoConfig {
 
     @Bean("dynamicThreadPollService")
     @Autowired(required = false)
-    public DynamicThreadPoolService dynamicThreadPoolService(ApplicationContext applicationContext, Map<String, ThreadPoolExecutor> threadPoolExecutorMap){
-        String applicationName = applicationContext.getEnvironment().getProperty("spring.application.name");
+    public DynamicThreadPoolService dynamicThreadPoolService(ApplicationContext applicationContext,
+                                                             Map<String, ThreadPoolExecutor> threadPoolExecutorMap,
+                                                             RedissonClient redissonClient){
+        applicationName = applicationContext.getEnvironment().getProperty("spring.application.name");
 
 
         if (StringUtils.isBlank(applicationName)) {
@@ -76,15 +84,26 @@ public class DynamicThreadPoolAutoConfig {
             logger.warn("动态线程池，启动提示。SpringBoot 应用未配置 spring.application.name 无法获取到应用名称！");
         }
 
-        Set<String> threadPoolKeys = threadPoolExecutorMap.keySet();
-        for (String threadPoolKey:threadPoolKeys){
-            ThreadPoolExecutor threadPoolExecutor = threadPoolExecutorMap.get(threadPoolKey);
-            int poolSize = threadPoolExecutor.getPoolSize();
-            int corePoolSize = threadPoolExecutor.getCorePoolSize();
-            BlockingQueue<Runnable> queue = threadPoolExecutor.getQueue();
-            String simpleName = queue.getClass().getSimpleName();
+        // 方法1:直接获取配置文件中的线程池数据
+//        Set<String> threadPoolKeys = threadPoolExecutorMap.keySet();
+//        for (String threadPoolKey:threadPoolKeys){
+//            ThreadPoolExecutor threadPoolExecutor = threadPoolExecutorMap.get(threadPoolKey);
+//            int poolSize = threadPoolExecutor.getPoolSize();
+//            int corePoolSize = threadPoolExecutor.getCorePoolSize();
+//            BlockingQueue<Runnable> queue = threadPoolExecutor.getQueue();
+//            String simpleName = queue.getClass().getSimpleName();
+//        }
 
+        // 方法2：获取缓存数据，设置本地线程池配置
+        Set<String> threadPoolKeys = threadPoolExecutorMap.keySet();
+        for (String threadPoolKey : threadPoolKeys) {
+            ThreadPoolConfigEntity threadPoolConfigEntity = redissonClient.<ThreadPoolConfigEntity>getBucket(RegistryEnumVO.THREAD_POOL_CONFIG_PARAMETER_LIST_KEY.getKey() + "_" + applicationName + "_" + threadPoolKey).get();
+            if (null == threadPoolConfigEntity) continue;
+            ThreadPoolExecutor threadPoolExecutor = threadPoolExecutorMap.get(threadPoolKey);
+            threadPoolExecutor.setCorePoolSize(threadPoolConfigEntity.getCorePoolSize());
+            threadPoolExecutor.setMaximumPoolSize(threadPoolConfigEntity.getMaximumPoolSize());
         }
+
 
         logger.info("线程池信息：{}", JSON.toJSONString(threadPoolExecutorMap.keySet()));
 
@@ -95,5 +114,18 @@ public class DynamicThreadPoolAutoConfig {
     public ThreadPoolDataReportJob threadPoolDataReportJob(IDynamicThreadPoolService dynamicThreadPoolService, IRegistry registry) {
         return new ThreadPoolDataReportJob(dynamicThreadPoolService, registry);
     }
+
+    @Bean
+    public ThreadPoolConfigAdjustListener threadPoolConfigAdjustListener(DynamicThreadPoolService dynamicThreadPoolService, IRegistry registry){
+        return new ThreadPoolConfigAdjustListener(dynamicThreadPoolService,registry);
+    }
+
+    @Bean(name = "dynamicThreadPoolRedisTopic")
+    public RTopic threadPoolConfigAdjustListener(RedissonClient redissonClient, ThreadPoolConfigAdjustListener threadPoolConfigAdjustListener) {
+        RTopic topic = redissonClient.getTopic(RegistryEnumVO.DYNAMIC_THREAD_POOL_REDIS_TOPIC.getKey() + "_" + applicationName);
+        topic.addListener(ThreadPoolConfigEntity.class, threadPoolConfigAdjustListener);
+        return topic;
+    }
+
 
 }
