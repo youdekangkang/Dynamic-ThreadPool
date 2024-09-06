@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.concurrent.ThreadPoolExecutor;
 
 
+
 public class DynamicThreadPoolService implements IDynamicThreadPoolService {
 
     private final Logger logger = LoggerFactory.getLogger(DynamicThreadPoolService.class);
@@ -73,9 +74,23 @@ public class DynamicThreadPoolService implements IDynamicThreadPoolService {
         ThreadPoolExecutor threadPoolExecutor = threadPoolExecutorMap.get(threadPoolConfigEntity.getThreadPoolName());
         if (null == threadPoolExecutor) return;
 
+        int maximumPoolSize = threadPoolConfigEntity.getMaximumPoolSize();
+        int corePoolSize = threadPoolExecutor.getCorePoolSize();
+        //CorePoolSize必须小于等于MaximumPoolSize, 否则会发出报警
+        if (maximumPoolSize < corePoolSize) {
+            // TODO 发出告警
+            logger.error("动态线程池变更配置时出错(最大线程数量小于核心线程数量):{}", corePoolSize);
+        }
+
         // 设置参数 「调整核心线程数和最大线程数」
-        threadPoolExecutor.setCorePoolSize(threadPoolConfigEntity.getCorePoolSize());
-        threadPoolExecutor.setMaximumPoolSize(threadPoolConfigEntity.getMaximumPoolSize());
+        //变更时注意设置值的顺序，始终满足CorePoolSize小于等于MaximumPoolSize
+        if (corePoolSize < threadPoolExecutor.getMaximumPoolSize()){
+            threadPoolExecutor.setCorePoolSize(threadPoolConfigEntity.getCorePoolSize());
+            threadPoolExecutor.setMaximumPoolSize(threadPoolConfigEntity.getMaximumPoolSize());
+        } else {
+            threadPoolExecutor.setMaximumPoolSize(threadPoolConfigEntity.getMaximumPoolSize());
+            threadPoolExecutor.setCorePoolSize(threadPoolConfigEntity.getCorePoolSize());
+        }
     }
 
 }

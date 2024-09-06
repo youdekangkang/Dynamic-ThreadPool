@@ -22,6 +22,7 @@ public class RedisRegistry implements IRegistry {
     public void reportThreadPool(List<ThreadPoolConfigEntity> threadPoolEntities) {
         // 将所有上报的线程池都添加在同一个list中，方便查询
         RList<ThreadPoolConfigEntity> setlsit = redissonClient.getList(RegistryEnumVO.THREAD_POOL_CONFIG_LIST_KEY.getKey());
+        setlsit.delete();
         setlsit.addAll(threadPoolEntities);
     }
 

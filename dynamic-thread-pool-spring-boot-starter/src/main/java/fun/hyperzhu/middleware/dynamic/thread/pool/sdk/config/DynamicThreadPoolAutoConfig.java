@@ -105,6 +105,8 @@ public class DynamicThreadPoolAutoConfig {
         }
 
 
+
+
         logger.info("线程池信息：{}", JSON.toJSONString(threadPoolExecutorMap.keySet()));
 
         return new DynamicThreadPoolService(applicationName, threadPoolExecutorMap);
